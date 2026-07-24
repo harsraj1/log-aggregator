@@ -19,5 +19,19 @@ services:
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafka-data:/var/lib/kafka/data
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: loguser
+      POSTGRES_PASSWORD: logpass
+      POSTGRES_DB: logs_db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
 volumes:
   kafka-data:
+  postgres-data:
