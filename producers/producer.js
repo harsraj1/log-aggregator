@@ -22,8 +22,8 @@ const messagesByLevel = {
  */
 function randomLevel() {
   const roll = Math.random();
-  if (roll < 0.7) return 'INFO';
-  if (roll < 0.9) return 'WARN';
+  if (roll < 0.5) return 'INFO';
+  if (roll < 0.8) return 'WARN';
   return 'ERROR';
 }
 
