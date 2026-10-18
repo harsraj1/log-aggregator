@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log Dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #0f1419; color: #e6e6e6; }
+    header { padding: 12px 20px; background: #1a212b; display: flex; justify-content: space-between; align-items: center; }
+    #status { font-size: 13px; }
+    .main { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; padding: 16px; }
+    .panel { background: #1a212b; border-radius: 8px; padding: 12px; }
+    h2 { margin: 0 0 10px; font-size: 16px; }
+    .filters { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    select, input, button { background: #0f1419; color: #e6e6e6; border: 1px solid #333; border-radius: 4px; padding: 5px 8px; }
+    button { cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #262e3a; }
+    .INFO { color: #6fcf97; } .WARN { color: #f2c94c; } .ERROR { color: #eb5757; font-weight: bold; }
+    .alert { border-left: 4px solid #eb5757; background: #2a1f24; padding: 6px 10px; margin-bottom: 8px; font-size: 13px; }
+    .alert small { color: #999; display: block; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Log Aggregation Dashboard</strong>
+    <span id="status">Connecting…</span>
+  </header>
+
+  <div class="main">
+    <div class="panel">
+      <h2>Logs</h2>
+      <div class="filters">
+        <select id="serviceFilter"><option value="">All services</option></select>
+        <select id="levelFilter">
+          <option value="">All levels</option>
+          <option>INFO</option><option>WARN</option><option>ERROR</option>
+        </select>
+        <input id="searchBox" placeholder="Search message…">
+        <button id="searchBtn">Search history</button>
+        <button id="liveBtn">Back to live</button>
+      </div>
+      <table>
+        <thead><tr><th>Time</th><th>Service</th><th>Level</th><th>Message</th></tr></thead>
+        <tbody id="logBody"></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Alerts</h2>
+      <div id="alertList"></div>
+    </div>
+  </div>
+
+<script>
+  const API = 'http://localhost:4000';
+  const MAX_ROWS = 50;
+  let liveMode = true;
+
+  const logBody = document.getElementById('logBody');
+  const alertList = document.getElementById('alertList');
+  const serviceFilter = document.getElementById('serviceFilter');
+  const levelFilter = document.getElementById('levelFilter');
+  const searchBox = document.getElementById('searchBox');
+  const statusEl = document.getElementById('status');
+
+  function makeLogRow(log) {
+    const tr = document.createElement('tr');
+    const cells = [
+      new Date(log.timestamp).toLocaleTimeString(),
+      log.service,
+      log.level,
+      log.message
+    ];
+    cells.forEach((text, i) => {
+      const td = document.createElement('td');
+      td.textContent = text;           // textContent (not innerHTML) keeps this safe
+      if (i === 2) td.className = log.level;
+      tr.appendChild(td);
+    });
+    return tr;
+  }
+
+  function makeAlertBox(alert) {
+    const div = document.createElement('div');
+    div.className = 'alert';
+    const title = document.createElement('strong');
+    title.textContent = `${alert.rule_triggered} — ${alert.service}`;
+    const details = document.createElement('div');
+    details.textContent = alert.details;
+    const time = document.createElement('small');
+    time.textContent = new Date(alert.created_at).toLocaleString();
+    div.append(title, details, time);
+    return div;
+  }
+
+  function passesFilters(log) {
+    if (serviceFilter.value && log.service !== serviceFilter.value) return false;
+    if (levelFilter.value && log.level !== levelFilter.value) return false;
+    const q = searchBox.value.trim().toLowerCase();
+    if (q && !log.message.toLowerCase().includes(q)) return false;
+    return true;
+  }
+
+  function addLiveLog(log) {
+    if (!liveMode || !passesFilters(log)) return;
+    logBody.prepend(makeLogRow(log));
+    while (logBody.rows.length > MAX_ROWS) logBody.deleteRow(-1);
+  }
+
+  function addAlert(alert) {
+    alertList.prepend(makeAlertBox(alert));
+    while (alertList.children.length > 20) alertList.lastChild.remove();
+  }
+
+  // ----- Historical search via the REST API -----
+  async function searchHistory() {
+    liveMode = false;
+    const params = new URLSearchParams();
+    if (serviceFilter.value) params.set('service', serviceFilter.value);
+    if (levelFilter.value) params.set('level', levelFilter.value);
+    if (searchBox.value.trim()) params.set('search', searchBox.value.trim());
+    const res = await fetch(`${API}/logs?${params}`);
+    const data = await res.json();
+    logBody.innerHTML = '';
+    data.logs.forEach(log => logBody.appendChild(makeLogRow(log)));
+  }
+
+  document.getElementById('searchBtn').onclick = searchHistory;
+  document.getElementById('liveBtn').onclick = () => { liveMode = true; logBody.innerHTML = ''; };
+
+  // ----- Initial data -----
+  async function loadInitial() {
+    const services = await (await fetch(`${API}/services`)).json();
+    services.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s; opt.textContent = s;
+      serviceFilter.appendChild(opt);
+    });
+    const alerts = await (await fetch(`${API}/alerts`)).json();
+    alerts.reverse().forEach(addAlert);   // oldest first, so newest ends up on top
+  }
+
+  // ----- WebSocket -----
+  function connect() {
+    const socket = new WebSocket('ws://localhost:4000');
+    socket.onopen = () => { statusEl.textContent = '🟢 Live'; };
+    socket.onclose = () => {
+      statusEl.textContent = '🔴 Disconnected — retrying…';
+      setTimeout(connect, 2000);
+    };
+    socket.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'log') addLiveLog(msg.data);
+      if (msg.type === 'alert') addAlert(msg.data);
+    };
+  }
+
+  loadInitial().catch(console.error);
+  connect();
+</script>
+</body>
+</html>

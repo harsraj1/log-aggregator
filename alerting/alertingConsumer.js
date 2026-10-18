@@ -8,6 +8,7 @@ const kafka = new Kafka({
 });
 
 const consumer = kafka.consumer({ groupId: 'alerting-group' });
+const producer = kafka.producer();
 
 const pool = new Pool({
   user: 'loguser',
@@ -70,7 +71,7 @@ async function sendNotification(ruleTriggered, service, details) {
 async function fireAlert(ruleTriggered, service, details) {
   console.log(`ALERT: [${ruleTriggered}] ${service} — ${details}`);
 
-  // 1. Always save the alert to Postgres (history is never throttled)
+  // 1. Save to Postgres (history is never throttled)
   try {
     await pool.query(
       `INSERT INTO alerts (rule_triggered, service, details) VALUES ($1, $2, $3)`,
@@ -80,7 +81,24 @@ async function fireAlert(ruleTriggered, service, details) {
     console.error('Failed to save alert to Postgres:', err.message);
   }
 
-  // 2. Then notify (subject to cooldown)
+  // 2. Publish to the alerts topic so the dashboard sees it live
+  try {
+    await producer.send({
+      topic: 'alerts',
+      messages: [{
+        value: JSON.stringify({
+          rule_triggered: ruleTriggered,
+          service,
+          details,
+          created_at: new Date().toISOString()
+        })
+      }]
+    });
+  } catch (err) {
+    console.error('Failed to publish alert to Kafka:', err.message);
+  }
+
+  // 3. Notify Discord (subject to cooldown)
   await sendNotification(ruleTriggered, service, details);
 }
 
@@ -118,6 +136,7 @@ function checkKeywordRule(log) {
 }
 
 async function run() {
+  await producer.connect();
   await consumer.connect();
   await consumer.subscribe({ topic: 'raw-logs', fromBeginning: false });
 
