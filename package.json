@@ -1,0 +1,25 @@
+{
+  "name": "log-aggregator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "install:all": "npm install --prefix producers && npm install --prefix ingestion && npm install --prefix alerting && npm install --prefix api",
+    "start": "concurrently -n producer,ingest,alert,api -c blue,green,red,yellow \"node producers/producer.js\" \"node ingestion/ingestionConsumer.js\" \"node alerting/alertingConsumer.js\" \"node api/server.js\""
+},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/harsraj1/log-aggregator.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/harsraj1/log-aggregator/issues"
+  },
+  "homepage": "https://github.com/harsraj1/log-aggregator#readme",
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}
