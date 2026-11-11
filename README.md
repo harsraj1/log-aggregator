@@ -44,7 +44,7 @@ Prerequisites: Node.js 18+, Docker Desktop.
 
 1. Clone the repo and install dependencies:
 ```bash
-   git clone https://github.com/<your-username>/log-aggregator.git
+   git clone https://github.com/harsraj1/log-aggregator.git
    cd log-aggregator
    npm install
    npm run install:all
